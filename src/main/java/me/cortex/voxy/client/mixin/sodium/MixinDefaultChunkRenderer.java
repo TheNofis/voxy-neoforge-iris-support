@@ -3,7 +3,6 @@ package me.cortex.voxy.client.mixin.sodium;
 import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
 import me.cortex.voxy.client.core.rendering.Viewport;
-import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.commonImpl.VoxyCommon;
 import net.caffeinemc.mods.sodium.client.gl.device.CommandList;
 import net.caffeinemc.mods.sodium.client.gl.device.RenderDevice;
@@ -51,14 +50,12 @@ public abstract class MixinDefaultChunkRenderer extends ShaderChunkRenderer {
         if (renderPass == DefaultTerrainRenderPasses.CUTOUT) {
             var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).getVoxyRenderSystem();
             if (renderer != null) {
-                Viewport<?> viewport = null;
-                if (IrisUtil.irisShaderPackEnabled()) {
-                    // When Iris is active, MixinIrisRenderingPipeline.beginLevelRendering already
-                    // called setupViewport — just retrieve the stored result
-                    viewport = renderer.getViewport();
-                } else {
-                    viewport = renderer.setupViewport(matrices, camera.x, camera.y, camera.z);
-                }
+                // Always call setupViewport here — the pre-setup in beginLevelRendering is
+                // unreliable because Iris calls beginLevelRendering from GameRenderer.renderLevel
+                // BEFORE LevelRenderer.renderLevel, so CAPTURED_VIEWPORT_PARAMETERS is still null
+                // when voxy$injectViewportSetup fires. setupViewport reads the GL viewport at the
+                // correct time (during the main Iris render pass with proper dimensions).
+                Viewport<?> viewport = renderer.setupViewport(matrices, camera.x, camera.y, camera.z);
                 renderer.renderOpaque(viewport);
             }
         }
