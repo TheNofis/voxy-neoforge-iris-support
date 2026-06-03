@@ -4,6 +4,7 @@ import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.client.iris.IGetVoxyPatchData;
 import me.cortex.voxy.client.iris.IrisShaderPatch;
+import me.cortex.voxy.client.iris.IrisVoxyRenderPipelineData;
 import net.irisshaders.iris.shaderpack.ShaderPack;
 import net.irisshaders.iris.shaderpack.include.AbsolutePackPath;
 import net.irisshaders.iris.shaderpack.programs.ProgramSet;
@@ -29,6 +30,9 @@ public class MixinProgramSet implements IGetVoxyPatchData {
         if (VoxyConfig.CONFIG.isRenderingEnabled() && IrisUtil.SHADER_SUPPORT) {
             this.patchData = IrisShaderPatch.makePatch(pack, directory, sourceProvider);
         }
+        // Inform StandardMacros injection whether to emit #define VOXY.
+        // This runs before shader compilation so the define is available in the first compile pass.
+        IrisVoxyRenderPipelineData.voxyPackHasSupport = (this.patchData != null);
         /*
         if (this.patchData != null) {
             //Inject directives from voxy

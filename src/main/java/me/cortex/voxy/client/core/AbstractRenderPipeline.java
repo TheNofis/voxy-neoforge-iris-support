@@ -235,6 +235,13 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
     public abstract void setupAndBindOpaque(Viewport<?> viewport);
     public abstract void setupAndBindTranslucent(Viewport<?> viewport);
 
+    /**
+     * Called after Iris finalizeLevelRendering() (after all composite passes).
+     * NormalRenderPipeline uses this to blit LOD color+depth to the main framebuffer,
+     * bypassing Iris's deferred lighting pipeline.  Default: no-op.
+     */
+    public void postIrisComposite(int mainFB, int srcWidth, int srcHeight) {}
+
 
     public void bindUniforms() {
         this.bindUniforms(-1);

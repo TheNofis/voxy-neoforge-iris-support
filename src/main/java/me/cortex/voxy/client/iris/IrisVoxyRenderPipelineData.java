@@ -38,9 +38,13 @@ import static org.lwjgl.opengl.GL33C.glBindSampler;
 import static org.lwjgl.opengl.GL43C.GL_SHADER_STORAGE_BUFFER;
 
 public class IrisVoxyRenderPipelineData {
+    /** True when the active shader pack contains voxy.json Voxy support. Set before shader compilation. */
+    public static volatile boolean voxyPackHasSupport = false;
+
     public IrisVoxyRenderPipeline thePipeline;
-    public final int[] opaqueDrawTargets;
-    public final int[] translucentDrawTargets;
+    // Not final: refreshed each frame so stale IDs from Iris render-target rebuilds are detected.
+    public int[] opaqueDrawTargets;
+    public int[] translucentDrawTargets;
     private final String opaquePatch;
     private final String translucentPatch;
     private final StructLayout uniforms;
@@ -53,7 +57,16 @@ public class IrisVoxyRenderPipelineData {
     public final boolean useViewportDims;
     public final boolean deferTranslucency;
 
-    private IrisVoxyRenderPipelineData(IrisShaderPatch patch, int[] opaqueDrawTargets, int[] translucentDrawTargets, StructLayout uniformSet, Runnable blendingSetup, ImageSet imageSet, SSBOSet ssboSet) {
+    // Stored to allow dynamic texture-ID resolution (Iris may rebuild render targets after init)
+    private final RenderTargets renderTargets;
+    private final int[] opaqueTargetIndices;
+    private final int[] translucentTargetIndices;
+    private final ImmutableSet<Integer> flippedAfterPrepare;
+
+    private IrisVoxyRenderPipelineData(IrisShaderPatch patch, int[] opaqueDrawTargets, int[] translucentDrawTargets,
+            StructLayout uniformSet, Runnable blendingSetup, ImageSet imageSet, SSBOSet ssboSet,
+            RenderTargets renderTargets, int[] opaqueTargetIndices, int[] translucentTargetIndices,
+            ImmutableSet<Integer> flippedAfterPrepare) {
         this.opaqueDrawTargets = opaqueDrawTargets;
         this.translucentDrawTargets = translucentDrawTargets;
         this.opaquePatch = patch.getPatchOpaqueSource();
@@ -67,6 +80,16 @@ public class IrisVoxyRenderPipelineData {
         this.resolutionScale = patch.getRenderScale();
         this.useViewportDims = patch.useViewportDims();
         this.deferTranslucency = patch.deferedTranslucentRendering();
+        this.renderTargets = renderTargets;
+        this.opaqueTargetIndices = opaqueTargetIndices;
+        this.translucentTargetIndices = translucentTargetIndices;
+        this.flippedAfterPrepare = flippedAfterPrepare;
+    }
+
+    /** Re-resolve texture IDs from the live RenderTargets. Call at the start of each frame. */
+    public void refreshDrawTargets() {
+        this.opaqueDrawTargets = getDrawBuffers(this.opaqueTargetIndices, this.flippedAfterPrepare, this.renderTargets);
+        this.translucentDrawTargets = getDrawBuffers(this.translucentTargetIndices, this.flippedAfterPrepare, this.renderTargets);
     }
 
     public SSBOSet getSsboSet() {
@@ -94,18 +117,19 @@ public class IrisVoxyRenderPipelineData {
     public static IrisVoxyRenderPipelineData buildPipeline(IrisRenderingPipeline ipipe, IrisShaderPatch patch, CustomUniforms cu, ShaderStorageBufferHolder ssboHolder) {
         var uniforms = createUniformLayoutStructAndUpdater(createUniformSet(cu, patch));
 
-
         var imageSet = createImageSet(ipipe, patch);
-
         var ssboSet = createSSBOLayouts(patch.getSSBOs(), ssboHolder);
 
-        var opaqueDrawTargets = getDrawBuffers(patch.getOpqaueTargets(), ipipe.getFlippedAfterPrepare(), ((IrisRenderingPipelineAccessor)ipipe).getRenderTargets());
-        var translucentDrawTargets = getDrawBuffers(patch.getTranslucentTargets(), ipipe.getFlippedAfterPrepare(), ((IrisRenderingPipelineAccessor)ipipe).getRenderTargets());
+        var rt = ((IrisRenderingPipelineAccessor)ipipe).getRenderTargets();
+        var flipped = ipipe.getFlippedAfterPrepare();
+        var opaqueTargetIndices = patch.getOpqaueTargets();
+        var translucentTargetIndices = patch.getTranslucentTargets();
+        var opaqueDrawTargets = getDrawBuffers(opaqueTargetIndices, flipped, rt);
+        var translucentDrawTargets = getDrawBuffers(translucentTargetIndices, flipped, rt);
 
-
-
-        //TODO: need to transform the string patch with the uniform decleration aswell as sampler declerations
-        return new IrisVoxyRenderPipelineData(patch, opaqueDrawTargets, translucentDrawTargets, uniforms, patch.createBlendSetup(), imageSet, ssboSet);
+        return new IrisVoxyRenderPipelineData(patch, opaqueDrawTargets, translucentDrawTargets,
+                uniforms, patch.createBlendSetup(), imageSet, ssboSet,
+                rt, opaqueTargetIndices, translucentTargetIndices, flipped);
     }
 
     private static int[] getDrawBuffers(int[] targets, ImmutableSet<Integer> stageWritesToAlt, RenderTargets rt) {

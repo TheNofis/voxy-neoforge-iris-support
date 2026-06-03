@@ -23,16 +23,6 @@ public class RenderPipelineFactory {
     }
 
     private static AbstractRenderPipeline createIrisPipeline(AsyncNodeManager nodeManager, NodeCleaner nodeCleaner, HierarchicalOcclusionTraverser traversal, BooleanSupplier frexSupplier) {
-        // TODO: IrisVoxyRenderPipeline stores Iris G-buffer texture IDs at construction time,
-        // but Iris rebuilds its render targets before the first frame renders, making those IDs
-        // stale and causing GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT in setup().
-        // Fix requires storing a RenderTargets reference and resolving texture IDs dynamically
-        // at render time instead of caching them at pipeline creation.
-        // Until then, fall through to NormalRenderPipeline — LODs render correctly but without
-        // the loaded shader pack's effects applied to them.
-        return null;
-
-        /*
         var irisPipe = Iris.getPipelineManager().getPipelineNullable();
         if (irisPipe == null) {
             return null;
@@ -52,6 +42,5 @@ public class RenderPipelineFactory {
             }
         }
         return null;
-        */
     }
 }

@@ -42,6 +42,11 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
     private final boolean useEnvFog;
     private final FullscreenBlit finalBlit;
 
+    // Deferred blit state: when Iris is active we skip the G-buffer blit in finish() and
+    // instead composite after Iris's own passes via postIrisComposite().
+    private boolean hasDeferredIrisBlit = false;
+    private Viewport<?> deferredIrisViewport = null;
+
     private final Shader ssaoCompute = Shader.make()
             .add(ShaderType.COMPUTE, "voxy:post/ssao.comp")
             .compile();
@@ -118,6 +123,18 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
 
     @Override
     protected void finish(Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
+        if (IrisUtil.IRIS_INSTALLED && IrisUtil.irisShaderPackEnabled()) {
+            // When Iris is active, don't blit into Iris's G-buffer here.
+            // Blitting already-lit LOD colors into the G-buffer causes Iris's deferred pipeline
+            // to apply lighting a second time (wrong normals → atmospheric pink tint, TAA trails).
+            // Instead we defer to postIrisComposite() which runs after Iris composites.
+            glDisable(GL_STENCIL_TEST);
+            glBindFramebuffer(GL_FRAMEBUFFER, sourceFrameBuffer);
+            this.hasDeferredIrisBlit = true;
+            this.deferredIrisViewport = viewport;
+            return;
+        }
+
         this.finalBlit.bind();
         if (this.useEnvFog) {
             glUniform4f(4, 0, 0, 0, 0);
@@ -127,13 +144,36 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
         // Use raw colors (colourTex) when SSAO was skipped, SSAO-processed otherwise
         glBindTextureUnit(3, this.skipSsaoThisFrame ? this.colourTex.id : this.colourSSAOTex.id);
 
-        //Do alpha blending
-
         glEnable(GL_BLEND);
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         AbstractRenderPipeline.transformBlitDepth(this.finalBlit, this.fb.getDepthTex().id, sourceFrameBuffer, viewport, new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
         glDisable(GL_BLEND);
-        //glBlitNamedFramebuffer(this.fbSSAO.id, sourceFrameBuffer, 0,0, viewport.width, viewport.height, 0,0, viewport.width, viewport.height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    }
+
+    @Override
+    public void postIrisComposite(int mainFB, int srcWidth, int srcHeight) {
+        if (!this.hasDeferredIrisBlit || this.deferredIrisViewport == null) return;
+        var viewport = this.deferredIrisViewport;
+        this.hasDeferredIrisBlit = false;
+        this.deferredIrisViewport = null;
+
+        this.finalBlit.bind();
+        if (this.useEnvFog) {
+            glUniform4f(4, 0, 0, 0, 0);
+            glUniform4f(5, 0, 0, 0, 0);
+        }
+        // SSAO is always skipped when Iris is active, so always use raw colourTex here.
+        glBindTextureUnit(3, this.colourTex.id);
+
+        glEnable(GL_BLEND);
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        AbstractRenderPipeline.transformBlitDepth(this.finalBlit, this.fb.getDepthTex().id, mainFB, viewport,
+                new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
+        glDisable(GL_BLEND);
+
+        // Restore state for subsequent Iris rendering (particles, weather, etc.)
+        glUseProgram(0);
+        glEnable(GL_DEPTH_TEST);
     }
 
     @Override

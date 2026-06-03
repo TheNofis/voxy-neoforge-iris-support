@@ -15,6 +15,8 @@ import net.irisshaders.iris.shaderpack.materialmap.WorldRenderingSettings;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL30;
 
+import java.util.Arrays;
+
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
@@ -30,6 +32,11 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
 
     private final GlBuffer shaderUniforms;
 
+    // Cached texture IDs — -1 means "not yet attached". Compared against data.opaqueDrawTargets
+    // each frame; if different, reattach so we always hold current Iris texture IDs.
+    private final int[] cachedOpaqueTexIds;
+    private final int[] cachedTranslucentTexIds;
+
     public IrisVoxyRenderPipeline(IrisVoxyRenderPipelineData data, AsyncNodeManager nodeManager, NodeCleaner nodeCleaner, HierarchicalOcclusionTraverser traversal, BooleanSupplier frexSupplier) {
         super(nodeManager, nodeCleaner, traversal, frexSupplier, data.shouldDeferTranslucency());
         this.data = data;
@@ -38,31 +45,57 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
         }
         this.data.thePipeline = this;
 
-        //Bind the drawbuffers
-        var oDT = this.data.opaqueDrawTargets;
-        int[] binding = new int[oDT.length];
-        for (int i = 0; i < oDT.length; i++) {
-            binding[i] = GL30.GL_COLOR_ATTACHMENT0+i;
-            glNamedFramebufferTexture(this.fb.framebuffer.id, GL30.GL_COLOR_ATTACHMENT0+i, oDT[i], 0);
-        }
-        glNamedFramebufferDrawBuffers(this.fb.framebuffer.id, binding);
+        // Set draw-buffer slot layout (which attachment points to write to).
+        // Textures are NOT attached here — Iris may rebuild render targets after this constructor
+        // returns, making any IDs we capture now stale. refreshFramebufferAttachments() in
+        // setup() resolves and attaches the live IDs on every frame instead.
+        int oLen = this.data.opaqueDrawTargets.length;
+        int[] oBinding = new int[oLen];
+        for (int i = 0; i < oLen; i++) oBinding[i] = GL30.GL_COLOR_ATTACHMENT0 + i;
+        glNamedFramebufferDrawBuffers(this.fb.framebuffer.id, oBinding);
 
-        var tDT = this.data.translucentDrawTargets;
-        binding = new int[tDT.length];
-        for (int i = 0; i < tDT.length; i++) {
-            binding[i] = GL30.GL_COLOR_ATTACHMENT0+i;
-            glNamedFramebufferTexture(this.fbTranslucent.framebuffer.id, GL30.GL_COLOR_ATTACHMENT0+i, tDT[i], 0);
-        }
-        glNamedFramebufferDrawBuffers(this.fbTranslucent.framebuffer.id, binding);
+        int tLen = this.data.translucentDrawTargets.length;
+        int[] tBinding = new int[tLen];
+        for (int i = 0; i < tLen; i++) tBinding[i] = GL30.GL_COLOR_ATTACHMENT0 + i;
+        glNamedFramebufferDrawBuffers(this.fbTranslucent.framebuffer.id, tBinding);
 
-        this.fb.framebuffer.verify();
-        this.fbTranslucent.framebuffer.verify();
+        this.cachedOpaqueTexIds = new int[oLen];
+        this.cachedTranslucentTexIds = new int[tLen];
+        Arrays.fill(this.cachedOpaqueTexIds, -1);
+        Arrays.fill(this.cachedTranslucentTexIds, -1);
 
         if (data.getUniforms() != null) {
             this.shaderUniforms = new GlBuffer(data.getUniforms().size());
         } else {
             this.shaderUniforms = null;
         }
+    }
+
+    /**
+     * Re-resolves Iris G-buffer texture IDs and reattaches them to our framebuffers if they changed.
+     * Must be called before DepthFramebuffer.resize() so verify() sees valid color attachments.
+     * Returns true if any attachment changed.
+     */
+    private boolean refreshFramebufferAttachments() {
+        this.data.refreshDrawTargets();
+        boolean changed = false;
+        var oDT = this.data.opaqueDrawTargets;
+        for (int i = 0; i < oDT.length; i++) {
+            if (this.cachedOpaqueTexIds[i] != oDT[i]) {
+                glNamedFramebufferTexture(this.fb.framebuffer.id, GL30.GL_COLOR_ATTACHMENT0 + i, oDT[i], 0);
+                this.cachedOpaqueTexIds[i] = oDT[i];
+                changed = true;
+            }
+        }
+        var tDT = this.data.translucentDrawTargets;
+        for (int i = 0; i < tDT.length; i++) {
+            if (this.cachedTranslucentTexIds[i] != tDT[i]) {
+                glNamedFramebufferTexture(this.fbTranslucent.framebuffer.id, GL30.GL_COLOR_ATTACHMENT0 + i, tDT[i], 0);
+                this.cachedTranslucentTexIds[i] = tDT[i];
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     @Override
@@ -100,9 +133,14 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
 
     @Override
     protected int setup(Viewport<?> viewport, int sourceFramebuffer, int srcWidth, int srcHeight) {
+        // Refresh before resize() — DepthFramebuffer.resize() calls verify() which requires
+        // valid color attachments. If Iris rebuilt render targets, old IDs are re-resolved here.
+        boolean texChanged = this.refreshFramebufferAttachments();
 
-        this.fb.resize(viewport.width, viewport.height);
-        this.fbTranslucent.resize(viewport.width, viewport.height);
+        boolean oResized = this.fb.resize(viewport.width, viewport.height);
+        if (texChanged && !oResized) this.fb.framebuffer.verify();
+        boolean tResized = this.fbTranslucent.resize(viewport.width, viewport.height);
+        if (texChanged && !tResized) this.fbTranslucent.framebuffer.verify();
 
         if (false) {//TODO: only do this if shader specifies
             //Clear the colour component

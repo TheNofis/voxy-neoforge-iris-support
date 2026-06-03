@@ -420,6 +420,15 @@ public class VoxyRenderSystem {
         this.renderDistanceTracker.setRenderDistance(renderDistance);
     }
 
+    /**
+     * Called after Iris finalizeLevelRendering() — composites the deferred LOD blit onto the
+     * main framebuffer, bypassing Iris's deferred lighting pipeline.
+     */
+    public void postIrisComposite() {
+        var mainTarget = Minecraft.getInstance().getMainRenderTarget();
+        this.pipeline.postIrisComposite(mainTarget.frameBufferId, mainTarget.width, mainTarget.height);
+    }
+
     public Viewport<?> getViewport() {
         // MC 1.21.1 NeoForge: Iris shadow integration disabled - Oculus (NeoForge Iris port) not yet supported
         // TODO: Add Oculus shadow detection when available
