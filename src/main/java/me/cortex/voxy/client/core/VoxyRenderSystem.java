@@ -381,11 +381,10 @@ public class VoxyRenderSystem {
 
         var projection = new Matrix4f();
         var client = Minecraft.getInstance();
-        var gameRenderer = client.gameRenderer;//tickCounter.getTickDelta(true);
+        var gameRenderer = client.gameRenderer;
 
-        // MC 1.21.1: getFov() became private, using options FOV value as fallback
-        // TODO: Consider using ViewportEvent.ComputeFov for accurate FOV with modifiers
-        float fov = client.options.fov().get().floatValue();
+        // AT makes getFov() public — accounts for sprinting, spyglass, and mod-applied FOV modifiers
+        float fov = gameRenderer.getFov(gameRenderer.getMainCamera(), 1.0f, true);
 
         projection.setPerspective(fov * 0.01745329238474369f,
                 (float) client.getWindow().getWidth() / (float)client.getWindow().getHeight(),
