@@ -26,10 +26,13 @@ public class ViewportSelector <T extends Viewport<?>> {
     private static final Object IRIS_SHADOW_OBJECT = new Object();
 
     public T getViewport() {
-        // Use a dedicated shadow viewport during Iris shadow pass so depth data
-        // is computed independently from the main scene viewport
+        // Skip LOD rendering during shadow pass — rendering to Iris G-buffer targets
+        // during the shadow pass causes GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT because
+        // shadow and main-scene render targets are incompatible.
+        // LOD shadows require dedicated shader pack support (voxy_shadow.glsl etc.)
+        // which is not yet implemented. renderOpaque(null) is a safe no-op.
         if (IrisUtil.irisShadowActive()) {
-            return this.getOrCreate(IRIS_SHADOW_OBJECT);
+            return null;
         }
         return this.defaultViewport;
     }
