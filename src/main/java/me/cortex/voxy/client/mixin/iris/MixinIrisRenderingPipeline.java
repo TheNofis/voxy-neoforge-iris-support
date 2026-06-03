@@ -19,6 +19,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import static org.lwjgl.opengl.GL11C.glViewport;
+
 @Mixin(value = IrisRenderingPipeline.class, remap = false)
 public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVoxyPipelineData {
     @Shadow @Final private CustomUniforms customUniforms;
@@ -47,6 +49,13 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
         if (IrisUtil.CAPTURED_VIEWPORT_PARAMETERS != null) {
             var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).getVoxyRenderSystem();
             if (renderer != null) {
+                // Iris shadow pass runs before beginLevelRendering and leaves the GL viewport at
+                // shadow map dimensions (or 0x0). setupViewport reads the GL viewport via
+                // glGetIntegerv to determine framebuffer size — if it gets 0x0 the subsequent
+                // DepthFramebuffer.resize(0,0) creates a 0×0 texture causing
+                // GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT. Restore main render target size first.
+                var rt = Minecraft.getInstance().getMainRenderTarget();
+                glViewport(0, 0, rt.width, rt.height);
                 IrisUtil.CAPTURED_VIEWPORT_PARAMETERS.apply(renderer);
             }
         }
