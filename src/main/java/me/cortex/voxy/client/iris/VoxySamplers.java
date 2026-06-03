@@ -18,6 +18,8 @@ public class VoxySamplers {
             }
 
             //TODO replace ()->0 with the actual depth texture id
+            // Iris 1.8.x: sampler is now direct GlSampler (not Supplier<GlSampler>)
+            // MIPPED_NEAREST_NEAREST renamed to MIPPED_NEAREST in Iris 1.8.x
             samplers.addDynamicSampler(TextureType.TEXTURE_2D, () -> {
                 var pipeData = ((IGetIrisVoxyPipelineData)pipeline).voxy$getPipelineData();
                 if (pipeData == null) {
@@ -26,14 +28,12 @@ public class VoxySamplers {
                 if (pipeData.thePipeline == null) {
                     return 0;
                 }
-
-                //In theory the first frame could be null
                 var dt = pipeData.thePipeline.fb.getDepthTex();
                 if (dt == null) {
                     return 0;
                 }
                 return dt.id;
-            }, ()->GlSampler.MIPPED_NEAREST_NEAREST, opaqueNames);
+            }, GlSampler.MIPPED_NEAREST, opaqueNames);
 
             samplers.addDynamicSampler(TextureType.TEXTURE_2D, () -> {
                 var pipeData = ((IGetIrisVoxyPipelineData)pipeline).voxy$getPipelineData();
@@ -43,13 +43,12 @@ public class VoxySamplers {
                 if (pipeData.thePipeline == null) {
                     return 0;
                 }
-                //In theory the first frame could be null
                 var dt = pipeData.thePipeline.fbTranslucent.getDepthTex();
                 if (dt == null) {
                     return 0;
                 }
                 return dt.id;
-            }, ()->GlSampler.MIPPED_NEAREST_NEAREST, translucentNames);
+            }, GlSampler.MIPPED_NEAREST, translucentNames);
         }
     }
 }

@@ -30,8 +30,7 @@ import me.cortex.voxy.client.core.rendering.util.DownloadStream;
 import me.cortex.voxy.client.core.rendering.util.PrintfDebugUtil;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
 import me.cortex.voxy.client.core.util.GPUTiming;
-// MC 1.21.1 NeoForge: Iris shader integration excluded
-// import me.cortex.voxy.client.core.util.IrisUtil;
+import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.thread.ServiceManager;
 import me.cortex.voxy.common.world.WorldEngine;
@@ -262,8 +261,7 @@ public class VoxyRenderSystem {
         this.pipeline.preSetup(viewport);
 
         TimingStatistics.E.start();
-        // MC 1.21.1 NeoForge: Iris shader integration excluded - irisShadowActive() returns false (no Iris shadows)
-        if ((!VoxyClient.disableSodiumChunkRender())&&!false) {
+        if ((!VoxyClient.disableSodiumChunkRender()) && !IrisUtil.irisShadowActive()) {
             this.chunkBoundRenderer.render(viewport);
         } else {
             viewport.depthBoundingBuffer.clear(0);
@@ -313,8 +311,7 @@ public class VoxyRenderSystem {
                 glBindSampler(i, 0);
             }
 
-            // MC 1.21.1 NeoForge: Iris shader integration excluded - clearIrisSamplers() is a no-op
-            // IrisUtil.clearIrisSamplers();//Thanks iris (sigh)
+            IrisUtil.clearIrisSamplers();
 
             //TODO: should/needto actually restore all of these, not just clear them
             //Clear all the bindings
@@ -376,17 +373,13 @@ public class VoxyRenderSystem {
         }
     }
 
-    private static Matrix4f makeProjectionMatrix(float near, float far) {
+    private static Matrix4f makeProjectionMatrix(float fovRad, float near, float far) {
         //TODO: use the existing projection matrix use mulLocal by the inverse of the projection and then mulLocal our projection
 
         var projection = new Matrix4f();
         var client = Minecraft.getInstance();
-        var gameRenderer = client.gameRenderer;
 
-        // AT makes getFov() public — accounts for sprinting, spyglass, and mod-applied FOV modifiers
-        float fov = gameRenderer.getFov(gameRenderer.getMainCamera(), 1.0f, true);
-
-        projection.setPerspective(fov * 0.01745329238474369f,
+        projection.setPerspective(fovRad,
                 (float) client.getWindow().getWidth() / (float)client.getWindow().getHeight(),
                 near, far);
         return projection;
@@ -401,10 +394,14 @@ public class VoxyRenderSystem {
         float nearVoxy = Minecraft.getInstance().gameRenderer.getRenderDistance()<=32.0f?8f:16f;
         nearVoxy = VoxyClient.disableSodiumChunkRender()?0.1f:nearVoxy;
 
+        // Extract FOV from the actual vanilla projection matrix (m11 = 1/tan(fovY/2))
+        // This accounts for sprinting, spyglass, NightVision, and any mod-applied FOV modifiers
+        float fovRad = (float)(2.0 * Math.atan(1.0 / base.m11()));
+
         return base.mulLocal(
-                makeProjectionMatrix(0.05f, Minecraft.getInstance().gameRenderer.getDepthFar()).invert(),
+                makeProjectionMatrix(fovRad, 0.05f, Minecraft.getInstance().gameRenderer.getDepthFar()).invert(),
                 new Matrix4f()
-        ).mulLocal(makeProjectionMatrix(nearVoxy, 16*3000));
+        ).mulLocal(makeProjectionMatrix(fovRad, nearVoxy, 16*3000));
     }
 
     private boolean frexStillHasWork() {

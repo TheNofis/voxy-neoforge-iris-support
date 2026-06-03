@@ -302,9 +302,10 @@ public class IrisShaderPatch {
         };
     }
 
+    // setLenient() used for MC 1.21.1 compatibility — Gson 2.10.x bundled by Minecraft lacks Strictness enum
     private static final Gson GSON = new GsonBuilder()
             .excludeFieldsWithModifiers(Modifier.PRIVATE)
-            .setStrictness(Strictness.LENIENT)
+            .setLenient()
             .create();
 
     public static IrisShaderPatch makePatch(ShaderPack ipack, AbsolutePackPath directory, Function<AbsolutePackPath, String> sourceProvider) {

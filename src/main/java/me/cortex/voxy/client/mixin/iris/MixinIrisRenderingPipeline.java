@@ -41,7 +41,8 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
         }
     }
 
-    @Inject(method = "beginLevelRendering", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/opengl/GlStateManager;_activeTexture(I)V", shift = At.Shift.BEFORE), remap = false)
+    // NeoForge 1.21.1 uses com.mojang.blaze3d.systems.GlStateManager (not .opengl. — that's 1.21.4+)
+    @Inject(method = "beginLevelRendering", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/GlStateManager;_activeTexture(I)V", shift = At.Shift.BEFORE), remap = false)
     private void voxy$injectViewportSetup(CallbackInfo ci) {
         if (IrisUtil.CAPTURED_VIEWPORT_PARAMETERS != null) {
             var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).getVoxyRenderSystem();
