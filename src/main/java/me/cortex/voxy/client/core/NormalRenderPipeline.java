@@ -29,7 +29,9 @@ import static org.lwjgl.opengl.GL11C.GL_NEAREST;
 import static org.lwjgl.opengl.GL11C.GL_RGBA8;
 import static org.lwjgl.opengl.GL14.glBlendFuncSeparate;
 import static org.lwjgl.opengl.GL15.GL_READ_WRITE;
+import static org.lwjgl.opengl.GL11C.GL_ALWAYS;
 import static org.lwjgl.opengl.GL30C.*;
+import static org.lwjgl.opengl.GL42.GL_LEQUAL;
 import static org.lwjgl.opengl.GL43.GL_DEPTH_STENCIL_TEXTURE_MODE;
 import static org.lwjgl.opengl.GL45C.glBindTextureUnit;
 import static org.lwjgl.opengl.GL45C.glTextureParameterf;
@@ -167,8 +169,17 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
 
         glEnable(GL_BLEND);
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+
+        // After Iris compositing the main-FB depth buffer is not in a reliable state for depth
+        // testing (composite full-screen quads may have written 0.0 or incorrect values).
+        // Use GL_ALWAYS so LOD pixels always pass the depth test. The stencil mask applied
+        // during LOD rendering already guarantees colourTex only contains pixels where vanilla
+        // terrain was absent, so LOD won't incorrectly overlay close vanilla geometry.
+        glDepthFunc(GL_ALWAYS);
         AbstractRenderPipeline.transformBlitDepth(this.finalBlit, this.fb.getDepthTex().id, mainFB, viewport,
                 new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
+        glDepthFunc(GL_LEQUAL);
+
         glDisable(GL_BLEND);
 
         // Restore state for subsequent Iris rendering (particles, weather, etc.)
