@@ -22,12 +22,12 @@ public abstract class MixinStandardMacros {
 
     @WrapOperation(method = "createStandardEnvironmentDefines", at = @At(value = "INVOKE", target = "Lcom/google/common/collect/ImmutableList;copyOf(Ljava/util/Collection;)Lcom/google/common/collect/ImmutableList;"))
     private static ImmutableList<StringPair> voxy$injectVoxyDefine(Collection<StringPair> list, Operation<ImmutableList<StringPair>> original) {
-        if (VoxyConfig.CONFIG.isRenderingEnabled() && IrisUtil.SHADER_SUPPORT) {
-            define((List<StringPair>) list, "VOXY");
-            if (IrisShaderPatch.IMPERSONATE_DISTANT_HORIZONS) {
-                define((List<StringPair>) list, "DISTANT_HORIZONS");
-            }
-        }
+        // TODO: Re-enable #define VOXY when IrisVoxyRenderPipeline is restored.
+        // IrisVoxyRenderPipeline is currently disabled (stale G-buffer texture IDs).
+        // Injecting #define VOXY without it causes shader packs like Photon to activate
+        // their Voxy-specific code paths which sample vxDepthTexOpaque — but since
+        // IrisVoxyRenderPipeline is not providing that depth texture, the sampler returns
+        // garbage, producing the rainbow color band artifacts on LOD terrain.
         return ImmutableList.copyOf(list);
     }
 }
