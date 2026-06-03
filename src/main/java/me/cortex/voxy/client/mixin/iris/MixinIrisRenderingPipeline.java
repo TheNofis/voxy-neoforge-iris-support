@@ -43,19 +43,6 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
         }
     }
 
-    /**
-     * After Iris finishes all deferred + composite passes, composite Voxy's LOD onto the main
-     * framebuffer.  This avoids Iris's G-buffer pipeline processing already-lit LOD colors
-     * (which would cause atmospheric tinting and TAA trails on the LOD terrain).
-     */
-    @Inject(method = "finalizeLevelRendering", at = @At("RETURN"), remap = false)
-    private void voxy$injectPostComposite(CallbackInfo ci) {
-        var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).getVoxyRenderSystem();
-        if (renderer != null) {
-            renderer.postIrisComposite();
-        }
-    }
-
     // Inject at HEAD — the original _activeTexture invoke point no longer exists in Iris 1.8.x
     @Inject(method = "beginLevelRendering", at = @At("HEAD"), remap = false)
     private void voxy$injectViewportSetup(CallbackInfo ci) {

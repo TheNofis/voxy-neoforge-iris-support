@@ -29,9 +29,7 @@ import static org.lwjgl.opengl.GL11C.GL_NEAREST;
 import static org.lwjgl.opengl.GL11C.GL_RGBA8;
 import static org.lwjgl.opengl.GL14.glBlendFuncSeparate;
 import static org.lwjgl.opengl.GL15.GL_READ_WRITE;
-import static org.lwjgl.opengl.GL11C.GL_ALWAYS;
 import static org.lwjgl.opengl.GL30C.*;
-import static org.lwjgl.opengl.GL42.GL_LEQUAL;
 import static org.lwjgl.opengl.GL43.GL_DEPTH_STENCIL_TEXTURE_MODE;
 import static org.lwjgl.opengl.GL45C.glBindTextureUnit;
 import static org.lwjgl.opengl.GL45C.glTextureParameterf;
@@ -44,10 +42,6 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
     private final boolean useEnvFog;
     private final FullscreenBlit finalBlit;
 
-    // Deferred blit state: when Iris is active we skip the G-buffer blit in finish() and
-    // instead composite after Iris's own passes via postIrisComposite().
-    private boolean hasDeferredIrisBlit = false;
-    private Viewport<?> deferredIrisViewport = null;
 
     private final Shader ssaoCompute = Shader.make()
             .add(ShaderType.COMPUTE, "voxy:post/ssao.comp")
@@ -125,18 +119,6 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
 
     @Override
     protected void finish(Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
-        if (IrisUtil.IRIS_INSTALLED && IrisUtil.irisShaderPackEnabled()) {
-            // When Iris is active, don't blit into Iris's G-buffer here.
-            // Blitting already-lit LOD colors into the G-buffer causes Iris's deferred pipeline
-            // to apply lighting a second time (wrong normals → atmospheric pink tint, TAA trails).
-            // Instead we defer to postIrisComposite() which runs after Iris composites.
-            glDisable(GL_STENCIL_TEST);
-            glBindFramebuffer(GL_FRAMEBUFFER, sourceFrameBuffer);
-            this.hasDeferredIrisBlit = true;
-            this.deferredIrisViewport = viewport;
-            return;
-        }
-
         this.finalBlit.bind();
         if (this.useEnvFog) {
             glUniform4f(4, 0, 0, 0, 0);
@@ -150,41 +132,6 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         AbstractRenderPipeline.transformBlitDepth(this.finalBlit, this.fb.getDepthTex().id, sourceFrameBuffer, viewport, new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
         glDisable(GL_BLEND);
-    }
-
-    @Override
-    public void postIrisComposite(int mainFB, int srcWidth, int srcHeight) {
-        if (!this.hasDeferredIrisBlit || this.deferredIrisViewport == null) return;
-        var viewport = this.deferredIrisViewport;
-        this.hasDeferredIrisBlit = false;
-        this.deferredIrisViewport = null;
-
-        this.finalBlit.bind();
-        if (this.useEnvFog) {
-            glUniform4f(4, 0, 0, 0, 0);
-            glUniform4f(5, 0, 0, 0, 0);
-        }
-        // SSAO is always skipped when Iris is active, so always use raw colourTex here.
-        glBindTextureUnit(3, this.colourTex.id);
-
-        glEnable(GL_BLEND);
-        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-
-        // After Iris compositing the main-FB depth buffer is not in a reliable state for depth
-        // testing (composite full-screen quads may have written 0.0 or incorrect values).
-        // Use GL_ALWAYS so LOD pixels always pass the depth test. The stencil mask applied
-        // during LOD rendering already guarantees colourTex only contains pixels where vanilla
-        // terrain was absent, so LOD won't incorrectly overlay close vanilla geometry.
-        glDepthFunc(GL_ALWAYS);
-        AbstractRenderPipeline.transformBlitDepth(this.finalBlit, this.fb.getDepthTex().id, mainFB, viewport,
-                new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
-        glDepthFunc(GL_LEQUAL);
-
-        glDisable(GL_BLEND);
-
-        // Restore state for subsequent Iris rendering (particles, weather, etc.)
-        glUseProgram(0);
-        glEnable(GL_DEPTH_TEST);
     }
 
     @Override
