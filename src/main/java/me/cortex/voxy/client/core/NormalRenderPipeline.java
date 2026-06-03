@@ -2,6 +2,7 @@ package me.cortex.voxy.client.core;
 
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.gl.GlFramebuffer;
+import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.client.core.gl.GlTexture;
 import me.cortex.voxy.client.core.gl.shader.Shader;
 import me.cortex.voxy.client.core.gl.shader.ShaderType;
@@ -80,8 +81,22 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
         return this.fb.getDepthTex().id;
     }
 
+    // Whether SSAO was skipped this frame (set in postOpaquePreTranslucent, read in finish)
+    private boolean skipSsaoThisFrame = false;
+
     @Override
     protected void postOpaquePreTranslucent(Viewport<?> viewport) {
+        // Skip SSAO when Iris is active — the viewport MVP is derived from Iris's modified
+        // projection (different near/far), causing SSAO to over-darken dense foliage.
+        // Iris/Photon then applies its atmospheric scattering to those over-darkened pixels,
+        // tinting them purple. Use raw block colors instead.
+        if (IrisUtil.IRIS_INSTALLED && IrisUtil.irisShaderPackEnabled()) {
+            this.skipSsaoThisFrame = true;
+            glBindFramebuffer(GL_FRAMEBUFFER, this.fbSSAO.id);
+            return;
+        }
+        this.skipSsaoThisFrame = false;
+
         this.ssaoCompute.bind();
         try (var stack = MemoryStack.stackPush()) {
             long ptr = stack.nmalloc(4*4*4);
@@ -104,17 +119,13 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
     @Override
     protected void finish(Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
         this.finalBlit.bind();
-        // MC 1.21.1 / Sodium 0.6.x: Environmental fog disabled
-        // FogParameters.environmental*() methods don't exist in Sodium 0.6.x
-        // RenderSystem.getShaderFog*() returns standard fog (underwater/lava) not environmental fog
-        // TODO: Research Sodium 0.6.x environmental fog API or implement custom distance-based fog
         if (this.useEnvFog) {
-            // Disable fog uniforms - set to zero (no fog effect)
             glUniform4f(4, 0, 0, 0, 0);
             glUniform4f(5, 0, 0, 0, 0);
         }
 
-        glBindTextureUnit(3, this.colourSSAOTex.id);
+        // Use raw colors (colourTex) when SSAO was skipped, SSAO-processed otherwise
+        glBindTextureUnit(3, this.skipSsaoThisFrame ? this.colourTex.id : this.colourSSAOTex.id);
 
         //Do alpha blending
 
